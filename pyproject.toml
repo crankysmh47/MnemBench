@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mnembench"
+version = "1.0.0"
+description = "Long-running benchmark for memory-augmented agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "crankysmh47", email = "annankhan741@gmail.com" }
+]
+dependencies = [
+  "httpx>=0.27.0"
+]
+keywords = ["agents", "memory", "benchmark", "llm", "evaluation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12"
+]
+
+[project.scripts]
+mnembench = "mnembench.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mnembench*"]
