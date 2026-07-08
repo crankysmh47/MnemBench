@@ -67,6 +67,7 @@ class MnemBenchScenario:
     description: str
     category: str
     steps: list[MnemBenchStep] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
     @property
     def probe_steps(self) -> list[MnemBenchStep]:

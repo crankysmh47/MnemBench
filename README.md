@@ -1,103 +1,96 @@
 # MnemBench
 
-Long-running benchmark for memory-augmented agents.
+Research-scale benchmark for persistent-memory agents.
 
-MnemBench tests whether an agent memory system can remember useful facts, reject noise, resolve contradictions, avoid stale recall, and keep context usage bounded across multi-session workflows.
+MnemBench tests whether an agent can accumulate experience across sessions, remember the current truth, reject noisy memory writes, avoid stale recall, preserve user isolation, and keep injected context bounded as memory grows. It is system-agnostic: any product with a compatible chat endpoint can be evaluated.
 
-It is system-agnostic. If your product exposes an OpenAI-style chat endpoint, you can run MnemBench against it. If your product also exposes a memory seeding endpoint, MnemBench can pre-load scenario facts before probe turns.
+## Why v2 Exists
 
-## Table of contents
+Most memory demos prove one pleasant case: teach a fact, open a new chat, ask for the fact. That is necessary, but too easy. Real memory systems fail through interference, stale recall, over-storage, user identity drift, and unbounded context injection.
 
-- [Install](#install)
-- [Quick start](#quick-start)
-- [What it measures](#what-it-measures)
-- [Endpoint contract](#endpoint-contract)
-- [Scenarios](#scenarios)
-- [CLI reference](#cli-reference)
-- [Reports](#reports)
-- [Examples](#examples)
-- [Development](#development)
-- [License](#license)
+MnemBench v2 turns those failure modes into a larger generated benchmark:
+
+| Profile | Scenarios | Use |
+|---------|----------:|-----|
+| `smoke` | 13 | CI and quick adapter checks |
+| `standard` | 65 | Product comparisons and demos |
+| `paper` | 195 | Long-running, research-style evaluation |
+
+The original 10 hand-authored scenarios remain available as `--suite v1`.
 
 ## Install
-
-Clone the repository:
 
 ```bash
 git clone https://github.com/crankysmh47/MnemBench.git
 cd MnemBench
-```
-
-Install in editable mode:
-
-```bash
 python -m pip install -e .
 ```
 
 Python 3.10+ is required.
 
-## Quick start
+## Quick Start
 
-List scenarios:
+List the v2 smoke catalog:
 
 ```bash
-mnembench --list
+mnembench --suite v2 --profile smoke --list
 ```
 
-Run without making API calls:
+Run without API calls:
 
 ```bash
-mnembench --dry-run
+mnembench --suite v2 --profile smoke --dry-run --no-baseline
 ```
 
-Run against a memory-enabled candidate server:
+Run a standard candidate-vs-baseline comparison:
 
 ```bash
-mnembench --server http://localhost:8000 --no-baseline
+mnembench --suite v2 --profile standard \
+  --server http://localhost:8000 \
+  --baseline http://localhost:8002 \
+  --judge-report
 ```
 
-Run candidate versus baseline:
+Run the long paper profile:
 
 ```bash
-mnembench --server http://localhost:8000 --baseline http://localhost:8002
-```
-
-Write a compact judge-facing report:
-
-```bash
-mnembench --server http://localhost:8000 --baseline http://localhost:8002 --judge-report
+mnembench --suite v2 --profile paper \
+  --server http://localhost:8000 \
+  --baseline http://localhost:8002 \
+  --repeat 3
 ```
 
 Reports are written to `reports/` by default.
 
-## What it measures
+## What It Measures
 
-| Dimension | What it checks |
-|-----------|----------------|
+| Domain | What It Catches |
+|--------|-----------------|
 | Cross-session recall | Facts taught in earlier sessions are recalled later |
-| Contradiction handling | New values replace stale values |
-| Salience gating | Definitive facts are stored; hedged noise is rejected |
-| Interference prevention | Stale or irrelevant facts do not leak into answers |
-| Dormant recall | Older useful facts can resurface after distraction |
-| Overload resistance | Important facts survive many distractors |
-| Multi-hop association | Connected facts can be used together |
-| Temporal decay | Old facts can fade while recent facts persist |
-| Context efficiency | Memory injection stays bounded as memory grows |
-| User isolation | One user's memories do not leak into another user's answers |
+| Current truth tracking | Updated facts replace stale values |
+| Salience boundary | Certain facts are stored, hedged noise is rejected |
+| Interference suppression | Nearby stale facts do not leak into answers |
+| Overload resistance | Critical facts survive many distractors |
+| Dormant resurfacing | Old but relevant facts can return when cued |
+| Associative multi-hop | Linked facts compose into useful answers |
+| Context budget | Injected memory stays bounded as stored facts grow |
+| User identity continuity | New sessions keep the same user namespace |
+| Proper noun grounding | Arbitrary codenames and IDs are remembered exactly |
+| Memory poison resistance | Prompt-injected memory rewrites fail |
+| Feedback learning | Repeatedly useful facts become easier to retrieve |
+| Cue-triggered prospective memory | Intentions fire on cue, not merely with time |
 
-## Endpoint contract
+## Endpoint Contract
 
 MnemBench expects a candidate chat server.
 
-### Required chat endpoint
-
-Default endpoint:
+### Required Chat Endpoint
 
 ```text
 POST <server>/chat
 ```
 
-Expected request shape:
+Request:
 
 ```json
 {
@@ -107,25 +100,33 @@ Expected request shape:
 }
 ```
 
-Expected response shape:
+Accepted response shapes:
+
+```json
+{ "response": "Got it." }
+```
+
+```json
+{ "answer": "Got it." }
+```
 
 ```json
 {
-  "response": "Got it. Your backend framework is FastAPI."
+  "choices": [
+    { "message": { "content": "Got it." } }
+  ]
 }
 ```
 
-MnemBench accepts common alternatives such as `answer`, `content`, or OpenAI-style `choices[0].message.content` when parsing responses.
+### Optional Memory Seed Endpoint
 
-### Optional memory seed endpoint
-
-If available, MnemBench can seed facts directly:
+If available, MnemBench can seed deterministic facts directly:
 
 ```text
 POST <server>/api/memory/store
 ```
 
-Expected request shape:
+Request:
 
 ```json
 {
@@ -138,80 +139,52 @@ Expected request shape:
 }
 ```
 
-If your system does not expose direct memory storage, run with:
+If your system does not expose direct memory storage, run:
 
 ```bash
-mnembench --server http://localhost:8000 --no-seed-memory
+mnembench --suite v2 --profile smoke --server http://localhost:8000 --no-seed-memory
 ```
 
-## Scenarios
-
-| ID | Purpose |
-|----|---------|
-| `ten_session_recall` | Recall 10 facts spread across 10 sessions |
-| `contradiction_chain` | Track repeated updates to the same entity |
-| `salience_gate` | Store clear facts and reject low-conviction statements |
-| `interference_gauntlet` | Avoid leaking stale facts after updates |
-| `dormant_resurrection` | Recall an older fact after many distractors |
-| `overload_resistance` | Preserve important facts under memory pressure |
-| `multi_hop_association` | Use linked facts together |
-| `temporal_decay` | Handle old versus recent facts |
-| `context_window_efficiency` | Keep injected memory bounded |
-| `cross_user_isolation` | Prevent cross-user leakage |
-
-Run one scenario:
-
-```bash
-mnembench --scenario contradiction_chain --dry-run
-```
-
-Repeat a scenario:
-
-```bash
-mnembench --scenario ten_session_recall --repeat 3 --server http://localhost:8000
-```
-
-## CLI reference
+## CLI Reference
 
 ```text
 mnembench [options]
 
---server URL          Candidate memory server. Default: http://localhost:8000
---baseline URL        Baseline server without memory. Default: http://localhost:8002
---scenario ID ...     Scenario IDs to run. Default: all
---output-dir PATH     Report output directory. Default: reports
---repeat N            Repeat each scenario N times
---dry-run             Use fixture responses; no API calls
---no-baseline         Skip baseline comparison
---no-seed-memory      Do not call /api/memory/store
---judge-report        Also write a compact Markdown summary
---list                List scenarios
---version             Print version
+--suite v1|v2        Benchmark suite. Default: v1
+--profile NAME       V2 size: smoke, standard, paper
+--server URL         Candidate memory server. Default: http://localhost:8000
+--baseline URL       Baseline server without memory. Default: http://localhost:8002
+--scenario ID ...    Scenario IDs to run. Default: all
+--output-dir PATH    Report output directory. Default: reports
+--repeat N           Repeat each scenario N times
+--dry-run            Use fixture/synthetic responses; no API calls
+--no-baseline        Skip baseline comparison
+--no-seed-memory     Do not call /api/memory/store
+--judge-report       Also write a compact Markdown summary
+--list               List scenarios
+--version            Print version
 ```
 
 ## Reports
 
-Each run writes a Markdown report, a JSON report, and optionally a compact judge summary.
+Each run writes:
 
-Comparison reports include candidate score, baseline score, score delta, composite delta, pass rate, per-scenario scores, and latency.
+- Markdown report for human review
+- JSON report for programmatic analysis
+- Optional judge-facing summary with `--judge-report`
+
+Comparison reports include candidate score, baseline score, score delta, composite delta, pass rate, per-scenario scores, latency, and dimension-level deltas.
 
 ## Examples
 
-See `examples/openai_compatible_adapter.py` for a minimal FastAPI adapter that exposes the endpoint shape MnemBench expects.
+See `examples/openai_compatible_adapter.py` for a minimal adapter that exposes the endpoint shape MnemBench expects.
 
 ## Development
 
-Run dry-run smoke tests:
-
-```bash
-python -m mnembench --dry-run --scenario contradiction_chain --judge-report
-```
-
-Run the package directly from source:
-
 ```bash
 python -m pip install -e .
-python -m mnembench --list
+python -m mnembench --suite v2 --profile smoke --dry-run --no-baseline --judge-report
+python -m mnembench --suite v1 --dry-run --scenario contradiction_chain
 ```
 
 ## License

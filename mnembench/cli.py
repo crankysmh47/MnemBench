@@ -18,15 +18,29 @@ from mnembench.report import write_report
 from mnembench.runner import MnemBenchComparison, MnemBenchReport, MnemBenchRunner
 
 
-def _list_scenarios() -> None:
-    """Print available scenarios in a formatted table."""
-    from mnembench.scenarios import ALL_MNEMBENCH_SCENARIOS
+def _load_scenarios(suite: str, profile: str):
+    """Load a scenario catalog for the selected suite."""
+    if suite == "v1":
+        from mnembench.scenarios import ALL_MNEMBENCH_SCENARIOS
 
-    print(f"{'ID':<30} {'Name':<35} {'Category':<15} Steps")
-    print(f"{'-' * 30} {'-' * 35} {'-' * 15} {'-' * 5}")
-    for scenario in ALL_MNEMBENCH_SCENARIOS:
+        return ALL_MNEMBENCH_SCENARIOS
+    if suite == "v2":
+        from mnembench.v2_scenarios import build_v2_scenarios
+
+        return build_v2_scenarios(profile)
+    raise SystemExit(f"Unknown suite: {suite}")
+
+
+def _list_scenarios(suite: str, profile: str) -> None:
+    """Print available scenarios in a formatted table."""
+    scenarios = _load_scenarios(suite, profile)
+
+    print(f"Suite: {suite}  Profile: {profile}")
+    print(f"{'ID':<34} {'Name':<35} {'Category':<15} Steps")
+    print(f"{'-' * 34} {'-' * 35} {'-' * 15} {'-' * 5}")
+    for scenario in scenarios:
         num_steps = len(scenario.steps)
-        print(f"{scenario.id:<30} {scenario.name:<35} {scenario.category:<15} {num_steps}")
+        print(f"{scenario.id:<34} {scenario.name:<35} {scenario.category:<15} {num_steps}")
 
 
 async def _run(
@@ -40,12 +54,12 @@ async def _run(
     no_baseline: bool,
     progress: bool,
     judge_report: bool,
+    suite: str,
+    profile: str,
 ) -> None:
     """Execute the benchmark."""
-    from mnembench.scenarios import ALL_MNEMBENCH_SCENARIOS
-
     # Filter scenarios
-    scenarios = ALL_MNEMBENCH_SCENARIOS
+    scenarios = _load_scenarios(suite, profile)
     if scenarios_filter and "all" not in scenarios_filter:
         filtered = []
         for sid in scenarios_filter:
@@ -65,7 +79,7 @@ async def _run(
     with_report: MnemBenchReport | None = None
     without_report: MnemBenchReport | None = None
 
-    print(f"\nRunning MnemBench on {len(scenarios)} scenario(s)...\n")
+    print(f"\nRunning MnemBench {suite}/{profile} on {len(scenarios)} scenario(s)...\n")
 
     runner_server = MnemBenchRunner(server, "with_memory", dry_run=dry_run, seed_memory=seed_memory, repeat=repeat)
     print(f"[with_memory] Server: {server}")
@@ -123,7 +137,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python -m mnembench --server http://localhost:8000 --baseline http://localhost:8002\n"
+            "  python -m mnembench --suite v2 --profile smoke --dry-run --no-baseline\n"
+            "  python -m mnembench --suite v2 --profile standard --server http://localhost:8000 --baseline http://localhost:8002\n"
             "  python -m mnembench --server http://localhost:8000 --scenario ten_session_recall --repeat 3\n"
             "  python -m mnembench --dry-run\n"
             "  python -m mnembench --list\n"
@@ -160,6 +175,18 @@ def main() -> None:
         type=int,
         default=1,
         help="Number of times to repeat each scenario (default: 1)",
+    )
+    parser.add_argument(
+        "--suite",
+        choices=["v1", "v2"],
+        default="v1",
+        help="Benchmark suite to run. v1 is the original 10-scenario suite; v2 is generated and research-scale.",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=["smoke", "standard", "paper"],
+        default="standard",
+        help="V2 catalog size: smoke=13 scenarios, standard=65, paper=195. Ignored for v1.",
     )
 
     # Mode flags
@@ -208,7 +235,7 @@ def main() -> None:
         sys.exit(0)
 
     if args.list:
-        _list_scenarios()
+        _list_scenarios(args.suite, args.profile)
         sys.exit(0)
 
     asyncio.run(
@@ -223,6 +250,8 @@ def main() -> None:
             no_baseline=args.no_baseline,
             progress=not args.no_progress,
             judge_report=args.judge_report,
+            suite=args.suite,
+            profile=args.profile,
         )
     )
 

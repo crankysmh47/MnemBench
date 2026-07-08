@@ -22,7 +22,7 @@ from mnembench.fixtures import (
     get_fixture_response,
     get_fixture_token_count,
 )
-from mnembench.scenarios import ALL_MNEMBENCH_SCENARIOS, MemorySeed, MnemBenchScenario
+from mnembench.scenarios import ALL_MNEMBENCH_SCENARIOS, MemorySeed, MnemBenchScenario, MnemBenchStep
 from mnembench.scoring import compute_comparison_scores, score_mnembench_scenario
 
 
@@ -217,7 +217,7 @@ class MnemBenchRunner:
             },
         )
         elapsed = (time.monotonic() - start) * 1000  # convert to ms
-        return resp.json().get("response", ""), elapsed
+        return _extract_response_text(resp.json()), elapsed
 
     async def _fetch_memory_dump(
         self,
@@ -253,10 +253,13 @@ class MnemBenchRunner:
         latencies: dict[int, float] = {}
 
         if self.dry_run:
+            synthetic_dump = _build_synthetic_memory_dump(scenario, self.mode)
             for step in scenario.steps:
                 response = get_fixture_response(scenario.id, step.step_index, self.mode)
+                if scenario.metadata.get("suite") == "v2":
+                    response = _build_synthetic_response(step, self.mode, response)
                 latency = get_fixture_latency(scenario.id, step.step_index, self.mode)
-                dump = get_fixture_memory_dump(scenario.id)
+                dump = get_fixture_memory_dump(scenario.id) or synthetic_dump
 
                 if step.phase in ("probe", "contradict", "measure"):
                     memory_dumps[step.step_index] = dump
@@ -364,3 +367,72 @@ class MnemBenchRunner:
                 report.runs.append(run_result)
 
         return report
+
+
+def _extract_response_text(payload: dict[str, Any]) -> str:
+    """Parse common chat response envelopes."""
+
+    for key in ("response", "answer", "content", "text"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            message = first.get("message")
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                return message["content"]
+            if isinstance(first.get("text"), str):
+                return first["text"]
+
+    return ""
+
+
+def _build_synthetic_memory_dump(scenario: MnemBenchScenario, mode: str) -> str:
+    """Build a deterministic dry-run memory dump for generated scenarios."""
+
+    if mode != "with_memory":
+        return ""
+
+    current: dict[tuple[str, str], MemorySeed] = {}
+    for step in scenario.steps:
+        if step.memory_seed is None:
+            continue
+        seed = step.memory_seed
+        current[(seed.entity.lower(), seed.relation.lower())] = seed
+
+    return "\n".join(
+        f"{seed.entity} -> {seed.relation} -> {seed.value}"
+        for seed in current.values()
+    )
+
+
+def _build_synthetic_response(step: MnemBenchStep, mode: str, fallback: str) -> str:
+    """Create useful v2 dry-run responses from expectations."""
+
+    if step.phase not in ("probe", "contradict"):
+        return fallback
+
+    if mode != "with_memory":
+        return "I do not have enough stored memory to answer that reliably."
+
+    present_terms: list[str] = []
+    for check_type, check_value, _desc in step.expectations:
+        if check_type == "keyword_present" and check_value:
+            present_terms.append(check_value)
+        elif check_type == "contradiction_resolved":
+            parts = check_value.split("|", 1)
+            if len(parts) == 2:
+                present_terms.append(parts[1])
+        elif check_type == "memory_state":
+            parts = check_value.split("|", 1)
+            if parts and parts[0]:
+                present_terms.append(parts[0])
+
+    if not present_terms:
+        return "The relevant memory did not fire for this prompt."
+
+    unique_terms = list(dict.fromkeys(present_terms))
+    return "The relevant stored memory is: " + ", ".join(unique_terms) + "."
