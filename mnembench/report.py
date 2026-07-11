@@ -124,12 +124,6 @@ def _build_category_map(scenarios: list) -> dict[str, str]:
     return {s.id: s.category for s in ALL_MNEMBENCH_SCENARIOS}
 
 
-def _run_category(run: MnemBenchScenarioRun, fallback: dict[str, str]) -> str:
-    """Return a scenario category without assuming the v1 catalog."""
-
-    return str(run.score_summary.get("category") or fallback.get(run.scenario_id, "?"))
-
-
 def generate_mnembench_report(
     comparison: MnemBenchComparison | None = None,
     with_report: MnemBenchReport | None = None,
@@ -210,7 +204,7 @@ def generate_mnembench_report(
             without_run = without_by_id.get(with_run.scenario_id)
             wo_score = without_run.average_probe_score if without_run else 0.0
             delta = with_run.average_probe_score - wo_score
-            cat = _run_category(with_run, cat_map).title()
+            cat = cat_map.get(with_run.scenario_id, "?").title()
             passed = "Yes" if with_run.score_summary.get("pass", False) else "No"
             lines.append(
                 f"| {with_run.scenario_id} | {cat} "
@@ -223,7 +217,7 @@ def generate_mnembench_report(
         lines.append("| Scenario | Category | Score | Pass |")
         lines.append("|----------|----------|------:|:----:|")
         for run in with_report.runs:
-            cat = _run_category(run, cat_map).title()
+            cat = cat_map.get(run.scenario_id, "?").title()
             passed = "Yes" if run.score_summary.get("pass", False) else "No"
             lines.append(
                 f"| {run.scenario_id} | {cat} "

@@ -263,7 +263,7 @@ def compute_dimension_scores(
     # Build dimension scores
     recall_precision = statistics.mean(recall_scores) if recall_scores else 0.0
     contradiction_score = (
-        statistics.mean(contradiction_scores) if contradiction_scores
+        1.0 - statistics.mean(contradiction_scores) if contradiction_scores
         else 0.0
     )
     # Invert: we want 0 interference
